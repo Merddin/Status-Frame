@@ -1,0 +1,294 @@
+# -*- coding: utf-8 -*-
+import os
+import quopri
+import imaplib
+import email.message
+import pygame
+import time
+from pygame.locals import *
+import pywapi
+import string
+import datetime
+import random
+from xml.dom.minidom import parse
+import urllib
+from icon_defs import *
+mouseX, mouseY = 0, 0
+
+
+class display:
+        screen = None;
+
+
+        def __init__(self):
+                # FROM HERE: http://www.karoltomala.com/blog/?p=679
+                disp_no = os.getenv("DISPLAY")
+                if disp_no:
+                    print "X Display = {0}".format(disp_no)
+                drivers = ['fbcon', 'directfb', 'svgalib', 'x11', 'dga', 'ggi', 'vgl', 'aalib']
+                found = False
+                for driver in drivers:
+                    if not os.getenv('SDL_VIDEODRIVER'):
+                       os.putenv('SDL_VIDEODRIVER', driver)
+                    try:
+                        pygame.display.init()
+                    except pygame.error:
+                        print 'Driver: {0} failed.'.format(driver)
+                        continue
+                    found = True
+                    break
+
+                if not found:
+                    raise Exception('No suitable video driver found!')
+
+                #size = (pygame.display.Info().current_w, pygame.display.Info().current_h)
+                size = (1024, 768)
+                print "Framebuffer Size: %d x %d" % (size[0], size[1])
+                self.screen = pygame.display.set_mode(size, pygame.RESIZABLE)
+                #self.screen = pygame.display.set_mode(size, pygame.FULLSCREEN)
+                self.screen.fill((255, 255, 255))
+                pygame.font.init()
+                pygame.mouse.set_visible(0)
+                pygame.display.update()
+                self.temp = 0
+                self.last_update = ''
+                self.icon = 0
+                self.rain = ''
+                self.td1 = ''
+                self.td2 = ''
+                self.td3 = ''
+                self.td4 = ''
+
+        def __del__(self):
+            "destructor"
+
+        def update_weather(self):
+            cc = 'current_conditions'
+            f = 'forecasts'
+            try:
+                w = pywapi.get_weather_from_weather_com('USNY0996', units='metric')    # RSXX0063
+                if (w[cc]['last_updated'] != self.last_update):
+                    try:
+                        self.last_update = w[cc]['last_updated']
+                        print "New Weather Update: " + self.last_update
+                        self.temp = string.lower(w[cc]['temperature'])
+                        self.icon = int(w[f][0]['day']['icon'])
+                        self.rain = w[f][0]['day']['chance_precip']
+                    except:
+                        print 'error'
+                else:
+                    print 'Weather Error 0'
+            except:
+                print 'weather ERROR'
+
+        def get_todo(self):
+            hostname = 'imap.mail.me.com'
+            username = 'racoonz@me.com'
+            password = 'vikvik'
+            connection = imaplib.IMAP4_SSL(hostname)
+            connection.login(username, password)
+            c = connection
+            try:
+                c.select('Notes', readonly=True)
+                typ, data = c.search(None, '(SUBJECT "ToDo")')
+                data = data[0].split()                             # convert tuple into array
+                num = max(data)                                    # choose max number from array <-> latest mail version
+                typ, data = c.fetch(num, 'RFC822')                 # get email body
+                msg = email.message_from_string(data[0][1])
+
+                text = msg.as_string()
+                text = quopri.decodestring(text.encode('utf-8')).decode('utf-8')        #
+                text2 = text.split('<br>')[1]                                           #
+                text3 = text2.replace("</div>", "")                                     # Get rid of junk in text
+                text4 = text3.replace("&nbsp;", "")                                     #
+
+                text5 = text4.split('<div>')                                            # Split text in to-do list
+
+                self.td1 = text5[1]
+                self.td2 = text5[2]
+                self.td3 = text5[3]
+                self.td4 = text5[4]
+            except:
+                print 'No ToDo'
+            finally:
+                try:
+                    c.close()
+                except:
+                    pass
+                c.logout()
+            return
+
+        def clean(self):
+            self.screen.fill((255, 255, 255))
+            pygame.display.update()
+
+        def displ(self):
+
+            self.screen.fill((255, 255, 255))
+            lc = (0, 0, 0)
+            fn = "freesans"
+
+# Time & Date
+
+            TimeF = pygame.font.SysFont(fn, int(160), bold=1)
+            WeekF = pygame.font.SysFont(fn, int(65), bold=0)
+            DateF = pygame.font.SysFont(fn, int(75), bold=1)
+
+            tm1 = time.strftime("%H:%M", time.localtime())
+            tm2 = time.strftime("%A ", time.localtime())
+            tm3 = time.strftime("%d %B", time.localtime())
+
+            rtm1 = TimeF.render(tm1, True, lc)
+            rtm2 = WeekF.render(tm2, True, lc)
+            rtm3 = DateF.render(tm3, True, lc)
+
+            self.screen.blit(rtm1, (50, 10))
+            self.screen.blit(rtm2, (50, 170))
+            self.screen.blit(rtm3, (50, 225))
+
+# Outside Temp
+
+            RainF = pygame.font.SysFont(fn, int(35), bold=1)
+            TempF = pygame.font.SysFont(fn, int(150), bold=1)
+            DegreeF = pygame.font.SysFont(fn, int(130), bold=0)
+
+            Raintxt = RainF.render(self.rain+'%', True, lc)
+            Temptxt = TempF.render(self.temp, True, lc)
+            Degreetxt = DegreeF.render(unichr(0x2103), True, lc)
+
+            self.screen.blit(Raintxt, (720, 60))
+            self.screen.blit(Temptxt, (570, 155))
+            self.screen.blit(Degreetxt, (740, 175)) #temp +20
+
+            icon = pygame.image.load(sd + icons[self.icon]).convert_alpha()
+            self.screen.blit(icon, (590, 30))
+
+# To Do
+            tdfont = pygame.font.SysFont(fn, int(50), bold=1)
+            t1 = tdfont.render(self.td1, True, lc)
+            self.screen.blit(t1, (570, 390))
+            t2 = tdfont.render(self.td2, True, lc)
+            self.screen.blit(t2, (570, 450))
+            t3 = tdfont.render(self.td3, True, lc)
+            self.screen.blit(t3, (570, 510))
+            t4 = tdfont.render(self.td4, True, lc)
+            self.screen.blit(t4, (570, 570))
+
+# Update Display
+
+            pygame.display.update()
+
+        def getimage(self):
+            count = 0
+            while count < n:
+                try:
+                    flickrkey = 'fe9e0f2ac0ee205c5feb87884fca43c0'
+                    print 'Getting a random Flickr picture...'
+                    yesterday = datetime.datetime.now() - datetime.timedelta(days=1)
+                    start = datetime.datetime(2010, 5, 25)
+                    number = (yesterday-start).days
+                    day = start + datetime.timedelta(days=random.randint(0, number))
+                    page = random.randint(1, 20)
+                    url = "http://api.flickr.com/services/rest/?method=flickr.interestingness.getList&api_key=%s&date=%s&per_page=6&page=%d&format=rest" % (flickrkey, day.strftime('%Y-%m-%d'), page)
+                    dom = parse(urllib.urlopen(url))
+                    elem = dom.getElementsByTagName('photo')[4]
+                    farm_id = elem.getAttributeNode('farm').nodeValue
+                    server_id = elem.getAttributeNode('server').nodeValue
+                    the_id = elem.getAttributeNode('id').nodeValue
+                    secret = elem.getAttributeNode('secret').nodeValue
+                    photo_url = "http://farm%s.staticflickr.com/%s/%s_%s_b.jpg" % (farm_id, server_id, the_id, secret)
+                    print photo_url
+                    picnum = str(count)
+                    picname = picnum + '.jpg'
+                    urllib.urlretrieve(photo_url, "/home/racoonz/Desktop/Gallery/" + picname)
+                    count += 1
+                except:
+                    print 'image ERROR'
+
+        def gallery(self):
+            try:
+                background = '/home/racoonz/Desktop/Gallery/%s.jpg' % str(gcount)
+                self.screen.fill((0, 0, 0))
+                pic1 = pygame.image.load(background).convert()
+                self.screen.blit(pic1, (0, 0))
+                pygame.display.update()
+            except:
+                print 'gallery error'
+
+        def posters(self):
+            try:
+                background = '/home/racoonz/Dropbox/RacoonzFrame/Posters/%s.jpg' % str(pcount)
+                self.screen.fill((0, 0, 0))
+                pic2 = pygame.image.load(background).convert()
+                self.screen.blit(pic2, (0, 0))
+                pygame.display.update()
+            except:
+                print 'poster error'
+                raise Exception('Not Enough Posters!')
+#==============================================================
+mode = 2
+gcount = 0
+pcount = 0
+first = display()
+running = True
+s = " "
+n = 3
+LEFT = 1
+MIDDLE = 2
+RIGHT = 3
+page = 2
+
+first.get_todo()
+first.update_weather()
+#first.getimage()
+
+while running:
+
+    for e in pygame.event.get():
+
+        if e.type == QUIT:
+            raise SystemExit, "QUIT"
+
+        elif e.type == pygame.MOUSEBUTTONDOWN and e.button == LEFT:
+            pos = pygame.mouse.get_pos()
+
+            if (mode > 1):
+                mode -= 1
+            else:
+                mode = mode
+                if pcount < 2:
+                    pcount += 1
+                else:
+                    pcount = 0
+
+        elif e.type == pygame.MOUSEBUTTONDOWN and e.button == RIGHT:
+            if (mode < 3):
+                mode += 1
+            else:
+                mode = mode
+                if gcount < (n-1):
+                    gcount += 1
+                else:
+                    gcount = 0
+
+        elif e.type == pygame.MOUSEBUTTONDOWN and e.button == MIDDLE:
+            first.getimage()
+
+    if (mode == 2):
+        s = time.strftime("%S")
+        if (int(s) == 0):
+            first.get_todo()
+            first.update_weather()
+        first.displ()
+        pygame.time.wait(100)
+
+    elif (mode == 1):
+        first.posters()
+        pygame.time.wait(100)
+
+    elif (mode == 3):
+        first.gallery()
+        pygame.time.wait(100)
+
+
+pygame.quit()
